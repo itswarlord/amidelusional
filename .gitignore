@@ -1,0 +1,16 @@
+# Security
+.env
+
+# Virtual Environment
+venv/
+__pycache__/
+*.pyc
+
+# OS generated files
+.DS_Store
+
+# Documents and Notes
+*.odt
+
+# Knowledge Base / Large PDFs
+knowledge_done/
