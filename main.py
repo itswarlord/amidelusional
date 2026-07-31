@@ -1,8 +1,7 @@
 """
 BUILT by Vansh Aggarwal. File dated Jun-28.
-
+UPDATED for 24/7 Server Deployment.
 """
-
 
 import os
 import re
@@ -22,7 +21,7 @@ from pinecone import Pinecone
 """
 Loading relevant agents. 
 1. .env is loaded 
-2. caspian_sdk is laoded 
+2. caspian_sdk is loaded 
 3. pinecone and local llm loaded.
 """
 
@@ -39,13 +38,9 @@ index = pc.Index("relationship-kb")
 
 print("Server running! Listening for Telegram and Email messages...")
 
-
-
 """
-Langchain class implimentation
-
+Langchain class implementation
 """
-
 
 class Section2_Profiles(BaseModel):
     ages_and_gap: str = Field(description="Ages of A and B, and difference")
@@ -99,8 +94,6 @@ class Section9_Diagnosis(BaseModel):
     advice_for_b: str = Field(description="Personalized communication fixes for B")
     relationship_score: int = Field(description="Final comprehensive score (0-100)")
 
-
-
 class FullAIReport(BaseModel):
     section_2_profiles: Section2_Profiles
     section_5_green_flags: Section5_GreenFlags
@@ -108,6 +101,17 @@ class FullAIReport(BaseModel):
     section_7_psychology: Section7_Psychology
     section_8_trajectory: Section8_Trajectory
     section_9_diagnosis: Section9_Diagnosis
+
+
+# PERFORMANCE FIX (MOVED HERE): Initialize Gemini once at startup, 
+# and now safely AFTER FullAIReport is defined!
+print("Initializing Gemini AI...")
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.6-flash", 
+    max_retries=5
+)
+structured_llm = llm.with_structured_output(FullAIReport)
+
 
 """
 Calculations using python. Basic Data analysis to prevent AI based hallucinations.
@@ -245,20 +249,11 @@ def query_pinecone_rag(search_query, top_k=3):
 
 """
 brain is working to take RAG data and relevant bg and chats to build a final report
-
 """
-
 
 def generate_ai_report(background_text, chat_text, math_stats):
     rag_search_query = f"{background_text[:300]} {chat_text[:500]}".strip()
     rag_context = query_pinecone_rag(rag_search_query, top_k=3)
-
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", 
-        max_retries=5
-    )
-    
-    structured_llm = llm.with_structured_output(FullAIReport)
 
     participant_names = list(math_stats["participants"].keys())
     name_a = participant_names[0] if len(participant_names) > 0 else "Person A"
@@ -272,8 +267,8 @@ def generate_ai_report(background_text, chat_text, math_stats):
         - **Bilateral Objectivity:** You maintain deep, equal empathy and analytical rigor for both Person A ({name_a}) and Person B ({name_b}). You understand both sides of every conflict and act as an impartial mirror for the relationship.
         - **Unflinching Truth with Compassion:** You deliver measured, thoughtful opinions, but you never shy away from taking a strong, clear clinical stance when spotting destructive patterns or toxic communication loops. You do not sugarcoat reality. However, you remain cautiously optimistic and do not overstate more than the clear communication indicates.
         - **Architectural Mastery & RAG Citation Integration:** You MUST evaluate and correlate the findings in the TOP 3 RAG RESEARCH EXCERPTS below with the specific behavioral markers, personality traits, and Gottman indicators observed in the chat log. Incorporate insights from the citations directly into your analysis.
-        - **Strengths-Based Focus:** While you must point out communication flaws, you MUST spend equal energy identifying the couple's underlying resilience, shared humor, and 'Green Flags'. Frame your diagnosis around growth and healing. But be brutally honest. Point out mistakes. Criticise openly. Do not be a fake positive beacon
-        -
+        - **Strengths-Based Focus:** While you must point out communication flaws, you MUST spend equal energy identifying the couple's underlying resilience, shared humor, and 'Green Flags'. Frame your diagnosis around growth and healing. But be brutally honest. Point out mistakes. Criticise openly. Do not be a fake positive beacon.
+        
         ====================================================
         TOP 3 RAG RESEARCH EXCERPTS (FROM KNOWLEDGE BASE):
         {rag_context}
@@ -300,11 +295,9 @@ def generate_ai_report(background_text, chat_text, math_stats):
     return result.model_dump()
 
 
-
 """
  DATA EXTRACTION & MASTER LISTENER
 """
-
 
 def rawdataextract(message):
     user_text = getattr(message, 'text', "")
@@ -315,15 +308,17 @@ def rawdataextract(message):
     for m in (raw_media or []):
         if isinstance(m, dict):
             fname = m.get('name') or m.get('filename') or 'chat.txt'
-            furl = m.get('url', '')
+            furl = m.get('url') or m.get('download_url') or m.get('file_url') or m.get('link') or ''
+            fcontent = m.get('content') or m.get('data') or m.get('bytes') or None
         else:
             fname = getattr(m, 'name', getattr(m, 'filename', 'chat.txt'))
-            furl = getattr(m, 'url', '')
+            furl = getattr(m, 'url', getattr(m, 'download_url', getattr(m, 'file_url', getattr(m, 'link', ''))))
+            fcontent = getattr(m, 'content', getattr(m, 'data', None))
         
         if "api.telegram.orgfile" in furl:
             furl = furl.replace("api.telegram.orgfile", "api.telegram.org/file")
 
-        media_list.append({"filename": fname, "url": furl})
+        media_list.append({"filename": fname, "url": furl, "content": fcontent, "raw_data": m})
 
     return {
         "sender_id": customer_id,
@@ -333,91 +328,115 @@ def rawdataextract(message):
 
 @client.on_message
 def handle_message(message):
-    data = rawdataextract(message)
-    user_id = str(data['sender_id'])
-    
-    user_folder = os.path.join(os.path.expanduser("~/Desktop"), "Caspian_Clients", user_id)
-    os.makedirs(user_folder, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    background_path, target_chat_path = None, None
-
-    # 1. Save Text (Background)
-    if data['text'].strip():
-        background_path = os.path.join(user_folder, f"background_{timestamp}.txt")
-        with open(background_path, "w", encoding="utf-8") as f: 
-            f.write(data['text'])
-        print(f"Background saved: {background_path}")
-    
-    # 2. Save Attachments
-    if data['attachments']:
-        for file in data['attachments']:
-            base_name, ext = os.path.splitext(file['filename'])
-            local_path = os.path.join(user_folder, f"{base_name}_{timestamp}{ext}")
-            
-            with open(local_path, "wb") as f: 
-                f.write(bolo.get(file['url']).content)
-            
-            print(f"📁 Attachment saved: {local_path}")
-            
-            if ext.lower() == ".txt":
-                target_chat_path = local_path
-
-
-    if target_chat_path:
-        print("\n1. Running Math Engine...")
-        math_stats = analyze_chat_stats(target_chat_path)
+    # ERROR HANDLING FIX: Wrapped everything in try/except to prevent the loop from dying
+    try:
+        data = rawdataextract(message)
+        user_id = str(data['sender_id'])
         
-        if not math_stats:
-            print("Error: File did not contain valid WhatsApp chat format. Aborting analysis.")
-            return
-
-        background_text = data['text'] if data['text'].strip() else "No background provided."
+        # FILE PATH FIX: Saves to the current working directory, not a non-existent GUI Desktop
+        user_folder = os.path.join(os.getcwd(), "Caspian_Clients", user_id)
+        os.makedirs(user_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        with open(target_chat_path, "r", encoding="utf-8") as f:
-            chat_text = f.read()
+        background_path, target_chat_path = None, None
 
-        print("\n2. Running Gemini + RAG Diagnostics...")
-        ai_stats = generate_ai_report(background_text, chat_text, math_stats)
+        # 1. Save Text (Background)
+        if data['text'].strip():
+            background_path = os.path.join(user_folder, f"background_{timestamp}.txt")
+            with open(background_path, "w", encoding="utf-8") as f: 
+                f.write(data['text'])
+            print(f"Background saved: {background_path}")
         
-        print("\n3. Compiling Final 9-Section JSON...")
-        final_report = {
-            "section_1_transcript_metadata": {
-                "chat_platform": "WhatsApp (Auto-detected)",
-                "date_range": f"{math_stats['metadata'].get('start_date')} to {math_stats['metadata'].get('end_date')}",
-                "total_files_analyzed": len(data['attachments'])
-            },
-            "section_2_profiles_and_baseline": ai_stats["section_2_profiles"],
-            "section_3_quantitative_metrics": {
-                "total_messages": math_stats["general_stats"]["total_messages"],
-                "late_night_messages": math_stats["general_stats"]["late_night_messages"],
-                "most_active_hour": math_stats["general_stats"]["most_active_hour"],
-                "participant_breakdown": math_stats["participants"]
-            },
-            "section_4_latency_and_responsiveness": {
-                name: {"avg_response_time_mins": metrics["avg_response_time_mins"]} 
-                for name, metrics in math_stats["participants"].items()
-            },
-            "section_5_positive_behavioral_markers": ai_stats["section_5_green_flags"],
-            "section_6_gottman_conflict_markers": ai_stats["section_6_gottman"],
-            "section_7_psychological_factors": ai_stats["section_7_psychology"],
-            "section_8_trend_analysis": ai_stats["section_8_trajectory"],
-            "section_9_ai_diagnosis": ai_stats["section_9_diagnosis"]
-        }
+        # 2. Save Attachments
+        if data['attachments']:
+            for file in data['attachments']:
+                base_name, ext = os.path.splitext(file['filename'])
+                local_path = os.path.join(user_folder, f"{base_name}_{timestamp}{ext}")
+                
+                # If we have a URL (Telegram), download it via requests
+                if file['url']:
+                    print(f"Downloading attachment from URL: {file['filename']}...")
+                    response = bolo.get(file['url'], timeout=30)
+                    response.raise_for_status()
+                    file_bytes = response.content
+                
+                # If we have raw content/bytes instead (Email SDK), use that directly
+                elif file['content']:
+                    print(f"Processing raw attachment content for: {file['filename']}...")
+                    file_bytes = file['content']
+                    if isinstance(file_bytes, str):
+                        file_bytes = file_bytes.encode('utf-8')
+                
+                else:
+                    print(f" Warning: No valid download URL or content found for {file['filename']}.")
+                    print(f" DEBUG Raw Attachment Data: {file['raw_data']}")
+                    continue
 
-        # Save Final JSON
-        json_path = os.path.join(user_folder, f"final_report_{timestamp}.json")
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(final_report, f, indent=4)
+                with open(local_path, "wb") as f: 
+                    f.write(file_bytes)
+                
+                print(f"Attachment saved: {local_path}")
+                
+                if ext.lower() == ".txt":
+                    target_chat_path = local_path
+
+
+        if target_chat_path:
+            print("\n1. Running Math Engine...")
+            math_stats = analyze_chat_stats(target_chat_path)
             
-        print(f"\nCOMPLETE! Final RAG-Enhanced 9-Section Report saved to: {json_path}")
+            if not math_stats:
+                print("Error: File did not contain valid WhatsApp chat format. Aborting analysis.")
+                return
+
+            background_text = data['text'] if data['text'].strip() else "No background provided."
+            
+            with open(target_chat_path, "r", encoding="utf-8") as f:
+                chat_text = f.read()
+
+            print("\n2. Running Gemini + RAG Diagnostics...")
+            ai_stats = generate_ai_report(background_text, chat_text, math_stats)
+            
+            print("\n3. Compiling Final 9-Section JSON...")
+            final_report = {
+                "section_1_transcript_metadata": {
+                    "chat_platform": "WhatsApp (Auto-detected)",
+                    "date_range": f"{math_stats['metadata'].get('start_date')} to {math_stats['metadata'].get('end_date')}",
+                    "total_files_analyzed": len(data['attachments'])
+                },
+                "section_2_profiles_and_baseline": ai_stats["section_2_profiles"],
+                "section_3_quantitative_metrics": {
+                    "total_messages": math_stats["general_stats"]["total_messages"],
+                    "late_night_messages": math_stats["general_stats"]["late_night_messages"],
+                    "most_active_hour": math_stats["general_stats"]["most_active_hour"],
+                    "participant_breakdown": math_stats["participants"]
+                },
+                "section_4_latency_and_responsiveness": {
+                    name: {"avg_response_time_mins": metrics["avg_response_time_mins"]} 
+                    for name, metrics in math_stats["participants"].items()
+                },
+                "section_5_positive_behavioral_markers": ai_stats["section_5_green_flags"],
+                "section_6_gottman_conflict_markers": ai_stats["section_6_gottman"],
+                "section_7_psychological_factors": ai_stats["section_7_psychology"],
+                "section_8_trend_analysis": ai_stats["section_8_trajectory"],
+                "section_9_ai_diagnosis": ai_stats["section_9_diagnosis"]
+            }
+
+            # Save Final JSON
+            json_path = os.path.join(user_folder, f"final_report_{timestamp}.json")
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(final_report, f, indent=4)
+                
+            print(f"\nCOMPLETE! Final RAG-Enhanced 9-Section Report saved to: {json_path}")
+            print("="*50)
+            
+    except Exception as e:
+        print(f" CRITICAL ERROR processing message: {e}")
+        print("Bot is continuing to listen for other users.")
         print("="*50)
 
-
-
-
 if __name__ == "__main__":
-    print("🛡️ Initializing robust auto-reconnect listener...")
+    print("Initializing robust listener...")
     while True:
         try:
             client.listen()
