@@ -1,6 +1,5 @@
 """
 BUILT by Vansh Aggarwal. File dated Jun-28.
-UPDATED for 24/7 Server Deployment.
 """
 
 import os
@@ -9,17 +8,30 @@ import time
 import httpx
 import json
 import requests as bolo
-from datetime import datetime
-from dotenv import load_dotenv
-from caspian_sdk import CommClient
-from pydantic import BaseModel, Field
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_huggingface import HuggingFaceEmbeddings
-from pinecone import Pinecone
+from datetime import datetime, timedelta
+from dotenv import load_dotenv #keys 
+from caspian_sdk import CommClient #chat interface module
+from pydantic import BaseModel, Field #class for query
+from langchain_google_genai import ChatGoogleGenerativeAI #downstream
+from langchain_core.prompts import ChatPromptTemplate #querying
+from langchain_huggingface import HuggingFaceEmbeddings #upstreat
+from pinecone import Pinecone #vector-db
+import uuid #encoding
+
+
+
+"""
+importing reportlab from github
+using documentation from github (credit where credit is due)
+"""
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 """
 Loading relevant agents. 
+note to self remember to make .env on server 
 1. .env is loaded 
 2. caspian_sdk is loaded 
 3. pinecone and local llm loaded.
@@ -37,6 +49,140 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("relationship-kb")
 
 print("Server running! Listening for Telegram and Email messages...")
+
+
+def safe_read_file(file_path):
+    """Tries multiple encodings to safely read iPhone and Android txt exports."""
+    encodings_to_try = ['utf-8', 'utf-16', 'utf-8-sig', 'windows-1252', 'latin-1']
+    for enc in encodings_to_try:
+        try:
+            with open(file_path, "r", encoding=enc) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+    # Ultimate fallback: read as utf-8 but ignore corrupted characters
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
+
+
+# double check on uploading and providing link
+def link_generato_for_file(file_path):    
+    # 1. Try tmpfiles.org
+    try:
+        with open(file_path, 'rb') as f:
+            response = bolo.post('https://tmpfiles.org/api/v1/upload', files={'file': f}, timeout=30)
+            if response.status_code == 200:
+                res_json = response.json()
+                if res_json.get('status') == 'success':
+                    url = res_json['data']['url']
+                    return url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+    except Exception as e:
+        print(f" tmpfiles.org upload attempt failed: {e}")
+
+    # 2. Fallback to transfer.sh
+    try:
+        with open(file_path, 'rb') as f:
+            filename = os.path.basename(file_path)
+            response = bolo.put(f'https://transfer.sh/{filename}', data=f, timeout=30)
+            if response.status_code == 200:
+                return response.text.strip()
+    except Exception as e:
+        print(f" transfer.sh upload attempt failed: {e}")
+
+    return None
+
+'''
+PDF generation 
+report labs documentation
+'''
+
+def reportlabdirectpdfconvertor(report_dict, output_path):
+    doc = SimpleDocTemplate(output_path, pagesize=letter)
+    
+    # --- STYLES ---
+    title_style = ParagraphStyle(
+        'CustomTitle', fontName='Times-Bold', fontSize=30, 
+        alignment=TA_CENTER, spaceAfter=20
+    )
+    score_style = ParagraphStyle(
+        'ScoreStyle', fontName='Times-Bold', fontSize=24, 
+        alignment=TA_CENTER, spaceAfter=30, textColor='black'
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading', fontName='Times-Bold', fontSize=18, 
+        alignment=TA_CENTER, spaceAfter=15, spaceBefore=20
+    )
+    body_style = ParagraphStyle(
+        'CustomBody', fontName='Times-Roman', fontSize=14, 
+        alignment=TA_LEFT, spaceAfter=10, leading=18
+    )
+
+    story = []
+
+    # 1. MAIN TITLE
+    story.append(Paragraph("Relationship Report", title_style))
+
+    # 2. ISOLATE & DISPLAY RELATIONSHIP SCORE (Size 24)
+    score = report_dict.get('section_9_ai_diagnosis', {}).get('relationship_score', 'N/A')
+    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 14))
+    story.append(Paragraph(f"Relationship Score:        {score}/100", score_style))
+    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 14))
+
+
+    def clean_text(text):
+        """Prepares text for ReportLab XML parsing"""
+        text = str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        text = text.replace("\n", "<br/>")
+        return text
+
+    def format_value(val):
+        """Handles lists and nested dictionaries neatly"""
+        if isinstance(val, list):
+            return ", ".join(clean_text(str(v)) for v in val)
+        elif isinstance(val, dict):
+            lines = [f"<br/>&nbsp;&nbsp;&nbsp;&nbsp;<b>{k.replace('_', ' ').title()}:</b> {clean_text(v)}" for k, v in val.items()]
+            return "".join(lines)
+        return clean_text(str(val))
+
+    # 3. SECTION ORDERING LOGIC
+    section_order = [
+        "section_9_ai_diagnosis",
+        "section_7_psychological_factors",
+        "section_5_positive_behavioral_markers",
+        "section_8_trend_analysis",
+        "section_2_profiles_and_baseline",
+        "section_1_transcript_metadata",
+        "section_6_gottman_conflict_markers",
+        "section_3_quantitative_metrics",
+        "section_4_latency_and_responsiveness"
+    ]
+
+    for section_key in section_order:
+        section_data = report_dict.get(section_key)
+        if not section_data:
+            continue #skip if not found
+
+        header_text = section_key[10:].title()
+        story.append(Paragraph(header_text, heading_style))
+        story.append(Spacer(1, 14))
+        story.append(Spacer(1, 14))
+
+        if isinstance(section_data, dict):
+            for key, val in section_data.items():
+                if key == "relationship_score":
+                    continue 
+                
+                k_clean = key.replace('_', ' ').title()
+                v_clean = format_value(val)
+                story.append(Paragraph(f"<b>{k_clean}:</b> {v_clean}", body_style))
+                story.append(Spacer(1, 14))
+                story.append(Spacer(1, 14))
+
+    doc.build(story)
+
 
 """
 Langchain class implementation
@@ -103,19 +249,16 @@ class FullAIReport(BaseModel):
     section_9_diagnosis: Section9_Diagnosis
 
 
-# PERFORMANCE FIX (MOVED HERE): Initialize Gemini once at startup, 
-# and now safely AFTER FullAIReport is defined!
+"""
+Loading the outside llm
+"""
 print("Initializing Gemini AI...")
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash", 
+    model="gemini-3.5-flash-lite", 
     max_retries=5
 )
 structured_llm = llm.with_structured_output(FullAIReport)
 
-
-"""
-Calculations using python. Basic Data analysis to prevent AI based hallucinations.
-"""
 
 def analyze_chat_stats(chat_file_path):
     stats = {
@@ -125,70 +268,95 @@ def analyze_chat_stats(chat_file_path):
         "participants": {}
     }
 
-    pattern = r"\[?(\d{1,2}/\d{1,2}/\d{2,4})[,\]\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*[a-zA-Z]{0,2})\]?\s*(?:-\s*)?(.*?):\s*(.*)"
-    last_sender, last_time = None, None
+    # Extremely robust regex that handles Android, iOS, 12hr, 24hr, and hidden spaces
+    pattern = re.compile(r"^\[?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})[,\]\s]+(\d{1,2}:\d{2}(?::\d{2})?[ \u202f]?(?:[aA][mM]|[pP][mM])?)\]?\s*(?:-\s*)?([^:]+):\s*(.*)$")
+    
+    last_sender, last_datetime = None, None
 
     try:
-        with open(chat_file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                match = re.match(pattern, line.strip())
-                if not match: continue
+        raw_text = safe_read_file(chat_file_path)
+        for line in raw_text.splitlines():
+            match = pattern.match(line.strip())
+            if not match: 
+                continue
 
-                date_str, time_str, sender, text = match.groups()
-                sender = sender.strip()
+            date_str, time_str, sender, text = match.groups()
+            sender = sender.strip()
+            
+            # Skip system encryption messages
+            if "messages and calls are end-to-end encrypted" in text or "changed their phone number" in text:
+                continue
                 
-                stats["metadata"]["dates"].append(date_str)
-                
-                if sender not in stats["participants"]:
-                    stats["participants"][sender] = {
-                        "msg_count": 0, "word_count": 0, "char_count": 0,
-                        "questions_asked": 0, "deleted_messages": 0, 
-                        "double_texts": 0, "response_times_mins": []
-                    }
-                
-                p = stats["participants"][sender]
-                stats["general_stats"]["total_messages"] += 1
-                p["msg_count"] += 1
-                p["word_count"] += len(text.split())
-                p["char_count"] += len(text)
-                
-                if "?" in text: p["questions_asked"] += 1
-                if "This message was deleted" in text or "null" in text: p["deleted_messages"] += 1
+            stats["metadata"]["dates"].append(date_str)
+            
+            if sender not in stats["participants"]:
+                stats["participants"][sender] = {
+                    "msg_count": 0, "word_count": 0, "char_count": 0,
+                    "questions_asked": 0, "deleted_messages": 0, 
+                    "double_texts": 0, "response_times_mins": []
+                }
+            
+            p = stats["participants"][sender]
+            stats["general_stats"]["total_messages"] += 1
+            p["msg_count"] += 1
+            p["word_count"] += len(text.split())
+            p["char_count"] += len(text)
+            
+            if "?" in text: p["questions_asked"] += 1
+            if "This message was deleted" in text or "null" in text: p["deleted_messages"] += 1
 
-                try:
-                    time_clean = time_str.replace('\u202f', ' ').strip().upper()
-                    has_seconds = time_clean.count(':') == 2
+            try:
+                # Purge invisible unicode formatting spaces
+                time_clean = re.sub(r'[\u202f\u200e\u200f]', ' ', time_str).strip().upper()
+                
+                # Normalize AM/PM formatting for Python strptime
+                if "AM" in time_clean and " AM" not in time_clean: time_clean = time_clean.replace("AM", " AM")
+                if "PM" in time_clean and " PM" not in time_clean: time_clean = time_clean.replace("PM", " PM")
+                
+                has_seconds = time_clean.count(':') == 2
+                is_ampm = "AM" in time_clean or "PM" in time_clean
+                
+                if is_ampm:
+                    fmt = "%I:%M:%S %p" if has_seconds else "%I:%M %p"
+                else:
+                    fmt = "%H:%M:%S" if has_seconds else "%H:%M"
                     
-                    if "M" in time_clean:
-                        fmt = "%I:%M:%S %p" if has_seconds else "%I:%M %p"
+                parsed_time = datetime.strptime(time_clean, fmt)
+                
+                # Create a baseline datetime object to reliably calculate math across midnight
+                current_datetime = datetime(2000, 1, 1, parsed_time.hour, parsed_time.minute, parsed_time.second)
+                
+                hour = current_datetime.hour
+                stats["hourly_activity"][str(hour)] += 1
+                if hour >= 23 or hour <= 4: stats["general_stats"]["late_night_messages"] += 1
+
+                # Latency & Double Text Math
+                if last_sender:
+                    if last_sender == sender:
+                        p["double_texts"] += 1
                     else:
-                        fmt = "%H:%M:%S" if has_seconds else "%H:%M"
-                        
-                    msg_time = datetime.strptime(time_clean, fmt)
-                    
-                    hour = msg_time.hour
-                    stats["hourly_activity"][str(hour)] += 1
-                    if hour >= 23 or hour <= 4: stats["general_stats"]["late_night_messages"] += 1
-
-                    if last_sender:
-                        if last_sender == sender:
-                            p["double_texts"] += 1
-                        else:
-                            if last_time:
-                                mins = (msg_time - last_time).total_seconds() / 60
-                                if 0 <= mins < 720: p["response_times_mins"].append(mins)
-                                    
-                    last_time, last_sender = msg_time, sender
-                except Exception:
-                    pass
+                        if last_datetime:
+                            # If current message is earlier in the day than the last message, they crossed midnight.
+                            if current_datetime < last_datetime:
+                                current_datetime = current_datetime + timedelta(days=1)
+                            
+                            mins = (current_datetime - last_datetime).total_seconds() / 60.0
+                            if 0 <= mins < 1440: # Ignore gaps larger than 24 hours to prevent skewed latency
+                                p["response_times_mins"].append(mins)
+                                
+                last_datetime = current_datetime
+                last_sender = sender
+            except Exception:
+                pass # Silently skip latency calculation for this single line if unparseable
 
     except Exception as e:
-        print(f"Error reading file: {e}")
+        print(f"Error reading file stats: {e}")
         return None
 
     if not stats["participants"]:
         return None
 
+    # Finalize participant math
     for sender, data in stats["participants"].items():
         data["avg_words_per_msg"] = round(data["word_count"] / max(1, data["msg_count"]), 1)
         if data["response_times_mins"]:
@@ -197,8 +365,8 @@ def analyze_chat_stats(chat_file_path):
             data["avg_response_time_mins"] = 0
         del data["response_times_mins"]
 
-    stats["metadata"]["start_date"] = stats["metadata"]["dates"][0]
-    stats["metadata"]["end_date"] = stats["metadata"]["dates"][-1]
+    stats["metadata"]["start_date"] = stats["metadata"]["dates"][0] if stats["metadata"]["dates"] else "Unknown"
+    stats["metadata"]["end_date"] = stats["metadata"]["dates"][-1] if stats["metadata"]["dates"] else "Unknown"
     del stats["metadata"]["dates"]
 
     peak_hour = max(stats["hourly_activity"], key=stats["hourly_activity"].get)
@@ -208,17 +376,9 @@ def analyze_chat_stats(chat_file_path):
     return stats
 
 
-"""
-querying pinecone
-"""
-
 def query_pinecone_rag(search_query, top_k=3):
-    """
-    Retrieves the TOP 3 most relevant research excerpts from Pinecone
-    using BAAI/bge-small-en-v1.5 local embeddings.
-    """
     try:
-        print("📚 Querying Pinecone RAG with BAAI/bge-small-en-v1.5...")
+        print("Querying Pinecone RAG with BAAI/bge-small-en-v1.5...")
         query_vector = embeddings.embed_query(search_query)
         response = index.query(
             vector=query_vector, top_k=top_k, include_metadata=True
@@ -243,45 +403,47 @@ def query_pinecone_rag(search_query, top_k=3):
         return "\n\n---\n\n".join(context_blocks)
 
     except Exception as e:
-        print(f"⚠️ Pinecone RAG Retrieval Warning: {e}")
+        print("Pinecone RAG Retrieval Warning:", e)
         return "RAG Knowledge Base lookup failed."
 
-
-"""
-brain is working to take RAG data and relevant bg and chats to build a final report
-"""
 
 def generate_ai_report(background_text, chat_text, math_stats):
     rag_search_query = f"{background_text[:300]} {chat_text[:500]}".strip()
     rag_context = query_pinecone_rag(rag_search_query, top_k=3)
 
     participant_names = list(math_stats["participants"].keys())
-    name_a = participant_names[0] if len(participant_names) > 0 else "Person A"
-    name_b = participant_names[1] if len(participant_names) > 1 else "Person B"
+
+    if len(participant_names) > 0:
+        name_a = participant_names[0]
+    else:
+        name_a ="Person A"
+
+    if len(participant_names) > 1:
+        name_b = participant_names[1]
+    else:
+        name_b ="Person B"
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are an elite, Gottman-certified clinical relationship psychologist and a cultural sociology expert specializing in Indian and South Asian relationship dynamics. 
-        You possess a profound understanding of the delicate interplay between modern romance, traditional expectations, family/societal pressures, and localized communication nuances.
+        ("system", """You are a relationship psychologist and a cultural sociology expert specializing in Indian and South Asian relationship dynamics. You refer to healthy relationships through the lens on indian society feriving the teaching of famous psychologists and prominent research theories sources for which have been provided through inbuilt RAG model.
+        You possess a profound understanding of the delicate interplay between modern romance, traditional expectations, family/societal pressures, and localized communication nuances. You understand indian texting dynamics on apps such as whatsapp.
 
         YOUR CLINICAL MANIFESTO:
-        - **Bilateral Objectivity:** You maintain deep, equal empathy and analytical rigor for both Person A ({name_a}) and Person B ({name_b}). You understand both sides of every conflict and act as an impartial mirror for the relationship.
+        - **Bilateral Objectivity:** You maintain deep, equal empathy and analytical rigor for both Person A ({name_a}) and Person B ({name_b}). You understand both sides of every conflict and act as an impartial mirror for the relationship. You are raw with your observation and results but at the the same time constructive and you do not hallucinate conversations that do not take place.
         - **Unflinching Truth with Compassion:** You deliver measured, thoughtful opinions, but you never shy away from taking a strong, clear clinical stance when spotting destructive patterns or toxic communication loops. You do not sugarcoat reality. However, you remain cautiously optimistic and do not overstate more than the clear communication indicates.
         - **Architectural Mastery & RAG Citation Integration:** You MUST evaluate and correlate the findings in the TOP 3 RAG RESEARCH EXCERPTS below with the specific behavioral markers, personality traits, and Gottman indicators observed in the chat log. Incorporate insights from the citations directly into your analysis.
         - **Strengths-Based Focus:** While you must point out communication flaws, you MUST spend equal energy identifying the couple's underlying resilience, shared humor, and 'Green Flags'. Frame your diagnosis around growth and healing. But be brutally honest. Point out mistakes. Criticise openly. Do not be a fake positive beacon.
         
-        ====================================================
         TOP 3 RAG RESEARCH EXCERPTS (FROM KNOWLEDGE BASE):
         {rag_context}
-        ====================================================
 
-        Analyze the provided quantitative chat metrics, background narrative, raw transcripts, and the TOP 3 RAG RESULTS above to construct your final diagnostic report.
+        Analyze the provided quantitative chat metrics, background narrative, raw transcripts, and the TOP 3 RAG RESULTS above to construct your final diagnostic report. Spend your time carefully ananlysing these chats and place some weightage on the provided background as well.
         MAPPING: Person A = {name_a}, Person B = {name_b}.
         Fill out all subjective and psychological sections requested in the schema."""),
         ("human", """BACKGROUND:\n{background}\n\nQUANTITATIVE STATS:\n{stats}\n\nCHAT:\n{chat}""")
     ])
     
     chain = prompt | structured_llm
-    print(f"🧠 Gemini + BAAI RAG is diagnosing the relationship between {name_a} and {name_b}...")
+    print(f"Gemini + BAAI RAG is diagnosing the relationship between {name_a} and {name_b}...")
     
     result = chain.invoke({
         "name_a": name_a, 
@@ -294,10 +456,6 @@ def generate_ai_report(background_text, chat_text, math_stats):
     
     return result.model_dump()
 
-
-"""
- DATA EXTRACTION & MASTER LISTENER
-"""
 
 def rawdataextract(message):
     user_text = getattr(message, 'text', "")
@@ -326,50 +484,125 @@ def rawdataextract(message):
         "attachments": media_list
     }
 
+
+def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
+    """
+    Anonymizes the chat, extracts deep clinical insights, and stores them in Pinecone.
+    Uses vector space for searchability and metadata for deep storage.
+    """
+    try:
+        print("Extracting deep learnings and anonymizing chat...")
+        
+        # --- 1. ANONYMIZE THE CHAT ---
+        participant_names = list(math_stats["participants"].keys())
+        anon_chat = raw_chat
+        
+        # Replace real names with "Partner A" and "Partner B"
+        for i, name in enumerate(participant_names):
+            # Case-insensitive replacement of the person's name
+            anon_chat = re.sub(re.escape(name), f"Partner_{chr(65+i)}", anon_chat, flags=re.IGNORECASE)
+            
+        # Strip phone numbers just in case
+        anon_chat = re.sub(r'\+?\d{10,14}', '[REDACTED_NUMBER]', anon_chat)
+        
+        # Take a highly representative sample of the chat (last 2000 chars captures the most recent dynamics)
+        # (We don't take the whole file to respect Pinecone's 40KB metadata limit)
+        chat_sample = anon_chat[-3000:] 
+
+        # --- 2. EXTRACT DEEP CLINICAL METRICS ---
+        diag = ai_report.get('section_9_ai_diagnosis', {})
+        psych = ai_report.get('section_7_psychological_factors', {})
+        gottman = ai_report.get('section_6_gottman_conflict_markers', {})
+        green = ai_report.get('section_5_positive_behavioral_markers', {})
+        traj = ai_report.get('section_8_trend_analysis', {}) # Fixed key!
+
+        strengths = ", ".join(diag.get('top_3_strengths', []))
+        triggers = ", ".join(psych.get('primary_conflict_triggers', []))
+        
+        # --- 3. CREATE THE SEARCHABLE VECTOR TEXT (Dense Psychology) ---
+        # This is what BAAI/bge-small will convert into numbers. 
+        search_text = (
+            f"Case Study of South Asian relationship dynamic. "
+            f"Attachment Styles: {psych.get('attachment_style_a', 'N/A')} and {psych.get('attachment_style_b', 'N/A')}. "
+            f"Conflict Triggers: {triggers}. Strengths: {strengths}. "
+            f"Gottman Repair Success: {gottman.get('repair_success_rate', 'N/A')}. "
+            f"Sentiment Drift is {traj.get('sentiment_drift', 'N/A')}."
+        )
+
+        # --- 4. CREATE THE FULL RETRIEVAL TEXT (What Gemini actually reads later) ---
+        full_retrieval_payload = f"""
+        [EMPIRICAL CASE STUDY - CASPIAN ARCHIVE]
+        
+        CLINICAL OVERVIEW:
+        - Attachment Dynamics: {psych.get('attachment_style_a', 'N/A')} and {psych.get('attachment_style_b', 'N/A')}
+        - Gottman Magic Ratio: {gottman.get('gottman_magic_ratio', 'N/A')}
+        - Repair Success Rate: {gottman.get('repair_success_rate', 'N/A')}
+        - Core Triggers: {triggers}
+        - Stabilizing Pillars: {strengths}
+        
+        AI DIAGNOSTIC ADVICE PREVIOUSLY GIVEN:
+        - To Partner A: {diag.get('advice_for_a', 'N/A')}
+        - To Partner B: {diag.get('advice_for_b', 'N/A')}
+
+        ANONYMIZED RAW CHAT SAMPLE (For context on how they speak):
+        {chat_sample}
+        """
+
+        # --- 5. VECTORIZE AND UPSERT ---
+        vector = embeddings.embed_query(search_text)
+        vector_id = f"caspian_case_{uuid.uuid4().hex[:8]}"
+        
+        index.upsert(
+            vectors=[{
+                "id": vector_id, 
+                "values": vector, 
+                "metadata": {
+                    "source": "Anonymized_Caspian_Data", 
+                    "type": "empirical_real_life_case_study",
+                    "text": full_retrieval_payload 
+                }
+            }]
+        )
+        print(f"Deep Case Study Stored Successfully! Vector ID: {vector_id}")
+
+    except Exception as e:
+        print(f"RAG Deep Learning Failed (Skipping): {e}")
+
 @client.on_message
 def handle_message(message):
-    # ERROR HANDLING FIX: Wrapped everything in try/except to prevent the loop from dying
     try:
         data = rawdataextract(message)
-        user_id = str(data['sender_id'])
         
-        # FILE PATH FIX: Saves to the current working directory, not a non-existent GUI Desktop
-        user_folder = os.path.join(os.getcwd(), "Caspian_Clients", user_id)
-        os.makedirs(user_folder, exist_ok=True)
+        # --- NEW DYNAMIC TIMESTAMP FOLDER NAMING ---
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        user_folder = os.path.join(os.getcwd(), "Caspian_Clients", f"Session_{timestamp}")
+        os.makedirs(user_folder, exist_ok=True)
         
         background_path, target_chat_path = None, None
 
-        # 1. Save Text (Background)
         if data['text'].strip():
             background_path = os.path.join(user_folder, f"background_{timestamp}.txt")
             with open(background_path, "w", encoding="utf-8") as f: 
                 f.write(data['text'])
             print(f"Background saved: {background_path}")
         
-        # 2. Save Attachments
         if data['attachments']:
             for file in data['attachments']:
                 base_name, ext = os.path.splitext(file['filename'])
                 local_path = os.path.join(user_folder, f"{base_name}_{timestamp}{ext}")
                 
-                # If we have a URL (Telegram), download it via requests
                 if file['url']:
                     print(f"Downloading attachment from URL: {file['filename']}...")
                     response = bolo.get(file['url'], timeout=30)
                     response.raise_for_status()
                     file_bytes = response.content
-                
-                # If we have raw content/bytes instead (Email SDK), use that directly
                 elif file['content']:
                     print(f"Processing raw attachment content for: {file['filename']}...")
                     file_bytes = file['content']
                     if isinstance(file_bytes, str):
                         file_bytes = file_bytes.encode('utf-8')
-                
                 else:
                     print(f" Warning: No valid download URL or content found for {file['filename']}.")
-                    print(f" DEBUG Raw Attachment Data: {file['raw_data']}")
                     continue
 
                 with open(local_path, "wb") as f: 
@@ -379,7 +612,6 @@ def handle_message(message):
                 
                 if ext.lower() == ".txt":
                     target_chat_path = local_path
-
 
         if target_chat_path:
             print("\n1. Running Math Engine...")
@@ -391,13 +623,13 @@ def handle_message(message):
 
             background_text = data['text'] if data['text'].strip() else "No background provided."
             
-            with open(target_chat_path, "r", encoding="utf-8") as f:
-                chat_text = f.read()
+            # --- USING SAFE READ TO PREVENT 0xff ENCODING ERRORS ---
+            chat_text = safe_read_file(target_chat_path)
 
             print("\n2. Running Gemini + RAG Diagnostics...")
             ai_stats = generate_ai_report(background_text, chat_text, math_stats)
             
-            print("\n3. Compiling Final 9-Section JSON...")
+            print("\n3. Compiling Final 9-Section JSON & Generating PDF...")
             final_report = {
                 "section_1_transcript_metadata": {
                     "chat_platform": "WhatsApp (Auto-detected)",
@@ -422,18 +654,51 @@ def handle_message(message):
                 "section_9_ai_diagnosis": ai_stats["section_9_diagnosis"]
             }
 
-            # Save Final JSON
             json_path = os.path.join(user_folder, f"final_report_{timestamp}.json")
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(final_report, f, indent=4)
+            
+            pdf_path = os.path.join(user_folder, f"Relationship_Report_{timestamp}.pdf")
+            reportlabdirectpdfconvertor(final_report, pdf_path)
                 
-            print(f"\nCOMPLETE! Final RAG-Enhanced 9-Section Report saved to: {json_path}")
+            print(f"COMPLETE! Reports saved locally:\nJSON: {json_path}\nPDF: {pdf_path}")
+
+# making the rag learn
+
+            teach_rag_new_patterns(final_report, chat_text, math_stats)            
+            print("\n4. Uploading PDF report to free host...")
+            download_url = link_generato_for_file(pdf_path)
+            
+            if download_url:
+                print(f" Universal Shareable Link: {download_url}")
+                
+                success_message = (
+                    "Your Relationship Diagnostic Report is ready! 🎉\n\n"
+                    "You can view and download your full PDF report here:\n"
+                    f"{download_url}"
+                )
+                
+                try:
+                    if hasattr(message, 'reply'):
+                        message.reply(success_message)
+                        print("Message containing PDF link replied directly to user.")
+                    elif hasattr(client, 'send_message'):
+                        client.send_message(data['sender_id'], success_message)
+                        print("Message containing PDF link sent via client to user.")
+                    else:
+                        print("Could not auto-reply: Send method not found.")
+                except Exception as send_err:
+                    print(f"Error sending message to user: {send_err}")
+            else:
+                print("Failed to generate shareable link.")
+
             print("="*50)
             
     except Exception as e:
-        print(f" CRITICAL ERROR processing message: {e}")
+        print(" CRITICAL ERROR processing message:", e)
         print("Bot is continuing to listen for other users.")
         print("="*50)
+
 
 if __name__ == "__main__":
     print("Initializing robust listener...")
@@ -442,7 +707,7 @@ if __name__ == "__main__":
             client.listen()
         except httpx.ReadTimeout:
             print("Network timeout (waiting for messages). Auto-reconnecting in 3 seconds...")
-            time.sleep(3)
+            time.sleep(5)
         except Exception as e:
             print(f"Connection interrupted ({e}). Auto-reconnecting in 5 seconds...")
-            time.sleep(5)
+            time.sleep(10)
