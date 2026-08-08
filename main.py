@@ -1,6 +1,10 @@
 """
-BUILT by Vansh Aggarwal. File dated Jun-28.
+BUILT by Vansh Aggarwal. 
 """
+
+
+# importing all the dependencies
+
 
 import os
 import re
@@ -51,12 +55,11 @@ embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("relationship-kb")
 
-# --- FASTAPI APP SETUP ---
 app = FastAPI(title="Am I Delusional API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Update this to your frontend domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,13 +74,12 @@ def safe_read_file(file_path):
                 return f.read()
         except UnicodeDecodeError:
             continue
-    # Ultimate fallback: read as utf-8 but ignore corrupted characters
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read()
 
 # double check on uploading and providing link
 def link_generato_for_file(file_path):    
-    # 1. Try tmpfiles.org
+    # tmpfiles.org
     try:
         with open(file_path, 'rb') as f:
             response = bolo.post('https://tmpfiles.org/api/v1/upload', files={'file': f}, timeout=30)
@@ -89,7 +91,7 @@ def link_generato_for_file(file_path):
     except Exception as e:
         print(f" tmpfiles.org upload attempt failed: {e}")
 
-    # 2. Fallback to transfer.sh
+    #transfer.sh
     try:
         with open(file_path, 'rb') as f:
             filename = os.path.basename(file_path)
@@ -109,7 +111,6 @@ report labs documentation
 def reportlabdirectpdfconvertor(report_dict, output_path):
     doc = SimpleDocTemplate(output_path, pagesize=letter)
     
-    # --- STYLES ---
     title_style = ParagraphStyle(
         'CustomTitle', fontName='Times-Bold', fontSize=30, 
         alignment=TA_CENTER, spaceAfter=20
@@ -129,17 +130,20 @@ def reportlabdirectpdfconvertor(report_dict, output_path):
 
     story = []
 
-    # 1. MAIN TITLE
     story.append(Paragraph("Relationship Report", title_style))
 
-    # 2. ISOLATE & DISPLAY RELATIONSHIP SCORE (Size 24)
     score = report_dict.get('section_9_ai_diagnosis', {}).get('relationship_score', 'N/A')
     story.append(Spacer(1, 14))
     story.append(Spacer(1, 14))
+
+
     story.append(Paragraph(f"Relationship Score:        {score}/100", score_style))
+
+    story.append(Spacer(1, 14))
+
     story.append(Spacer(1, 14))
     story.append(Spacer(1, 14))
-    story.append(Spacer(1, 14))
+
 
     def clean_text(text):
         """Prepares text for ReportLab XML parsing"""
@@ -156,7 +160,6 @@ def reportlabdirectpdfconvertor(report_dict, output_path):
             return "".join(lines)
         return clean_text(str(val))
 
-    # 3. SECTION ORDERING LOGIC
     section_order = [
         "section_9_ai_diagnosis",
         "section_7_psychological_factors",
@@ -261,6 +264,8 @@ class FullAIReport(BaseModel):
 """
 Loading the outside llm
 """
+
+
 print("Initializing Gemini AI...")
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite", 
@@ -276,7 +281,6 @@ def analyze_chat_stats(chat_file_path):
         "participants": {}
     }
 
-    # Extremely robust regex that handles Android, iOS, 12hr, 24hr, and hidden spaces
     pattern = re.compile(r"^\[?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})[,\]\s]+(\d{1,2}:\d{2}(?::\d{2})?[ \u202f]?(?:[aA][mM]|[pP][mM])?)\]?\s*(?:-\s*)?([^:]+):\s*(.*)$")
     
     last_sender, last_datetime = None, None
@@ -314,7 +318,6 @@ def analyze_chat_stats(chat_file_path):
             if "This message was deleted" in text or "null" in text: p["deleted_messages"] += 1
 
             try:
-                # Purge invisible unicode formatting spaces
                 time_clean = re.sub(r'[\u202f\u200e\u200f]', ' ', time_str).strip().upper()
                 
                 # Normalize AM/PM formatting for Python strptime
@@ -331,14 +334,12 @@ def analyze_chat_stats(chat_file_path):
                     
                 parsed_time = datetime.strptime(time_clean, fmt)
                 
-                # Create a baseline datetime object to reliably calculate math across midnight
                 current_datetime = datetime(2000, 1, 1, parsed_time.hour, parsed_time.minute, parsed_time.second)
                 
                 hour = current_datetime.hour
                 stats["hourly_activity"][str(hour)] += 1
                 if hour >= 23 or hour <= 4: stats["general_stats"]["late_night_messages"] += 1
 
-                # Latency & Double Text Math
                 if last_sender:
                     if last_sender == sender:
                         p["double_texts"] += 1
@@ -355,7 +356,9 @@ def analyze_chat_stats(chat_file_path):
                 last_datetime = current_datetime
                 last_sender = sender
             except Exception:
-                pass # Silently skip latency calculation for this single line if unparseable
+                pass #exception handling for excess just store and ignore philosophy
+
+
 
     except Exception as e:
         print(f"Error reading file stats: {e}")
@@ -364,7 +367,6 @@ def analyze_chat_stats(chat_file_path):
     if not stats["participants"]:
         return None
 
-    # Finalize participant math
     for sender, data in stats["participants"].items():
         data["avg_words_per_msg"] = round(data["word_count"] / max(1, data["msg_count"]), 1)
         if data["response_times_mins"]:
@@ -386,7 +388,7 @@ def analyze_chat_stats(chat_file_path):
 
 def query_pinecone_rag(search_query, top_k=3):
     try:
-        print("Querying Pinecone RAG with BAAI/bge-small-en-v1.5...")
+        print("Querying pinecone RAG with BAAI.")
         query_vector = embeddings.embed_query(search_query)
         response = index.query(
             vector=query_vector, top_k=top_k, include_metadata=True
@@ -426,10 +428,14 @@ def generate_ai_report(background_text, chat_text, math_stats):
     else:
         name_a ="Person A"
 
+
+
     if len(participant_names) > 1:
         name_b = participant_names[1]
     else:
         name_b ="Person B"
+
+
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are a relationship psychologist and a cultural sociology expert specializing in Indian and South Asian relationship dynamics. You refer to healthy relationships through the lens on indian society feriving the teaching of famous psychologists and prominent research theories sources for which have been provided through inbuilt RAG model.
@@ -501,23 +507,16 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
     try:
         print("Extracting deep learnings and anonymizing chat...")
         
-        # --- 1. ANONYMIZE THE CHAT ---
         participant_names = list(math_stats["participants"].keys())
         anon_chat = raw_chat
         
-        # Replace real names with "Partner A" and "Partner B"
         for i, name in enumerate(participant_names):
-            # Case-insensitive replacement of the person's name
             anon_chat = re.sub(re.escape(name), f"Partner_{chr(65+i)}", anon_chat, flags=re.IGNORECASE)
             
-        # Strip phone numbers just in case
         anon_chat = re.sub(r'\+?\d{10,14}', '[REDACTED_NUMBER]', anon_chat)
         
-        # Take a highly representative sample of the chat (last 2000 chars captures the most recent dynamics)
-        # (We don't take the whole file to respect Pinecone's 40KB metadata limit)
         chat_sample = anon_chat[-3000:] 
 
-        # --- 2. EXTRACT DEEP CLINICAL METRICS ---
         diag = ai_report.get('section_9_ai_diagnosis', {})
         psych = ai_report.get('section_7_psychological_factors', {})
         gottman = ai_report.get('section_6_gottman_conflict_markers', {})
@@ -527,8 +526,7 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
         strengths = ", ".join(diag.get('top_3_strengths', []))
         triggers = ", ".join(psych.get('primary_conflict_triggers', []))
         
-        # --- 3. CREATE THE SEARCHABLE VECTOR TEXT (Dense Psychology) ---
-        # This is what BAAI/bge-small will convert into numbers. 
+
         search_text = (
             f"Case Study of South Asian relationship dynamic. "
             f"Attachment Styles: {psych.get('attachment_style_a', 'N/A')} and {psych.get('attachment_style_b', 'N/A')}. "
@@ -537,7 +535,9 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
             f"Sentiment Drift is {traj.get('sentiment_drift', 'N/A')}."
         )
 
-        # --- 4. CREATE THE FULL RETRIEVAL TEXT (What Gemini actually reads later) ---
+
+        #creating the load
+
         full_retrieval_payload = f"""
         [EMPIRICAL CASE STUDY - CASPIAN ARCHIVE]
         
@@ -556,7 +556,8 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
         {chat_sample}
         """
 
-        # --- 5. VECTORIZE AND UPSERT ---
+        #sending the chat to RAG 
+
         vector = embeddings.embed_query(search_text)
         vector_id = f"caspian_case_{uuid.uuid4().hex[:8]}"
         
@@ -577,7 +578,6 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
         print(f"RAG Deep Learning Failed (Skipping): {e}")
 
 
-# --- NEW HTTP ENDPOINT FOR NEXT.JS ---
 @app.post("/api/analyze")
 async def http_analyze_chat(
     background: str = Form(...),
@@ -595,7 +595,7 @@ async def http_analyze_chat(
         user_folder = os.path.join(os.getcwd(), "Web_Clients", f"Session_{timestamp}")
         os.makedirs(user_folder, exist_ok=True)
 
-        # 1. Save File and Background Context
+        # saving
         target_chat_path = os.path.join(user_folder, f"chat_{timestamp}.txt")
         with open(target_chat_path, "wb") as buffer:
             shutil.copyfileobj(chat_file.file, buffer)
@@ -604,7 +604,7 @@ async def http_analyze_chat(
         with open(background_path, "w", encoding="utf-8") as f:
             f.write(background)
 
-        # 2. Run Pipeline
+        # pipeline
         print("\n[HTTP] 1. Running Math Engine...")
         math_stats = analyze_chat_stats(target_chat_path)
         if not math_stats:
@@ -665,8 +665,7 @@ async def http_analyze_chat(
 def handle_message(message):
     try:
         data = rawdataextract(message)
-        
-        # --- NEW DYNAMIC TIMESTAMP FOLDER NAMING ---
+        #timestamp folder for compliance
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_folder = os.path.join(os.getcwd(), "Caspian_Clients", f"Session_{timestamp}")
         os.makedirs(user_folder, exist_ok=True)
@@ -716,7 +715,6 @@ def handle_message(message):
 
             background_text = data['text'] if data['text'].strip() else "No background provided."
             
-            # --- USING SAFE READ TO PREVENT 0xff ENCODING ERRORS ---
             chat_text = safe_read_file(target_chat_path)
 
             print("\n2. Running Gemini + RAG Diagnostics...")
@@ -794,6 +792,8 @@ def handle_message(message):
 
 def run_caspian_bot():
     """Runs the blocking Caspian listener in a separate thread."""
+
+
     print("Initializing robust Caspian listener on background thread...")
     while True:
         try:
@@ -807,10 +807,9 @@ def run_caspian_bot():
 
 
 if __name__ == "__main__":
-    # 1. Start the Caspian Bot as a daemon thread (runs in background)
     bot_thread = threading.Thread(target=run_caspian_bot, daemon=True)
     bot_thread.start()
+
     
-    # 2. Start the FastAPI server on the main thread
     print("Starting FastAPI HTTP Server for Next.js Frontend...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
