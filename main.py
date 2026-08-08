@@ -7,6 +7,7 @@ import re
 import time
 import httpx
 import json
+import threading
 import requests as bolo
 from datetime import datetime, timedelta
 from dotenv import load_dotenv #keys 
@@ -17,8 +18,10 @@ from langchain_core.prompts import ChatPromptTemplate #querying
 from langchain_huggingface import HuggingFaceEmbeddings #upstreat
 from pinecone import Pinecone #vector-db
 import uuid #encoding
-
-
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+import shutil
 
 """
 importing reportlab from github
@@ -48,8 +51,16 @@ embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("relationship-kb")
 
-print("Server running! Listening for Telegram and Email messages...")
+# --- FASTAPI APP SETUP ---
+app = FastAPI(title="Am I Delusional API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Update this to your frontend domain in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def safe_read_file(file_path):
     """Tries multiple encodings to safely read iPhone and Android txt exports."""
@@ -63,7 +74,6 @@ def safe_read_file(file_path):
     # Ultimate fallback: read as utf-8 but ignore corrupted characters
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read()
-
 
 # double check on uploading and providing link
 def link_generato_for_file(file_path):    
@@ -130,7 +140,6 @@ def reportlabdirectpdfconvertor(report_dict, output_path):
     story.append(Spacer(1, 14))
     story.append(Spacer(1, 14))
     story.append(Spacer(1, 14))
-
 
     def clean_text(text):
         """Prepares text for ReportLab XML parsing"""
@@ -258,7 +267,6 @@ llm = ChatGoogleGenerativeAI(
     max_retries=5
 )
 structured_llm = llm.with_structured_output(FullAIReport)
-
 
 def analyze_chat_stats(chat_file_path):
     stats = {
@@ -568,6 +576,91 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
     except Exception as e:
         print(f"RAG Deep Learning Failed (Skipping): {e}")
 
+
+# --- NEW HTTP ENDPOINT FOR NEXT.JS ---
+@app.post("/api/analyze")
+async def http_analyze_chat(
+    background: str = Form(...),
+    chat_file: UploadFile = File(...)
+):
+    """
+    Handles HTTP uploads from the Next.js frontend, utilizing the 
+    exact same pipeline as the Caspian bot.
+    """
+    if not chat_file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        user_folder = os.path.join(os.getcwd(), "Web_Clients", f"Session_{timestamp}")
+        os.makedirs(user_folder, exist_ok=True)
+
+        # 1. Save File and Background Context
+        target_chat_path = os.path.join(user_folder, f"chat_{timestamp}.txt")
+        with open(target_chat_path, "wb") as buffer:
+            shutil.copyfileobj(chat_file.file, buffer)
+
+        background_path = os.path.join(user_folder, f"background_{timestamp}.txt")
+        with open(background_path, "w", encoding="utf-8") as f:
+            f.write(background)
+
+        # 2. Run Pipeline
+        print("\n[HTTP] 1. Running Math Engine...")
+        math_stats = analyze_chat_stats(target_chat_path)
+        if not math_stats:
+            raise HTTPException(status_code=400, detail="Invalid WhatsApp chat format.")
+
+        chat_text = safe_read_file(target_chat_path)
+
+        print("\n[HTTP] 2. Running Gemini + RAG Diagnostics...")
+        ai_stats = generate_ai_report(background, chat_text, math_stats)
+
+        print("\n[HTTP] 3. Compiling Final JSON & Generating PDF...")
+        final_report = {
+            "section_1_transcript_metadata": {
+                "chat_platform": "WhatsApp (Auto-detected)",
+                "date_range": f"{math_stats['metadata'].get('start_date')} to {math_stats['metadata'].get('end_date')}",
+                "total_files_analyzed": 1
+            },
+            "section_2_profiles_and_baseline": ai_stats["section_2_profiles"],
+            "section_3_quantitative_metrics": {
+                "total_messages": math_stats["general_stats"]["total_messages"],
+                "late_night_messages": math_stats["general_stats"]["late_night_messages"],
+                "most_active_hour": math_stats["general_stats"]["most_active_hour"],
+                "participant_breakdown": math_stats["participants"]
+            },
+            "section_4_latency_and_responsiveness": {
+                name: {"avg_response_time_mins": metrics["avg_response_time_mins"]} 
+                for name, metrics in math_stats["participants"].items()
+            },
+            "section_5_positive_behavioral_markers": ai_stats["section_5_green_flags"],
+            "section_6_gottman_conflict_markers": ai_stats["section_6_gottman"],
+            "section_7_psychological_factors": ai_stats["section_7_psychology"],
+            "section_8_trend_analysis": ai_stats["section_8_trajectory"],
+            "section_9_ai_diagnosis": ai_stats["section_9_diagnosis"]
+        }
+
+        pdf_path = os.path.join(user_folder, f"Relationship_Report_{timestamp}.pdf")
+        reportlabdirectpdfconvertor(final_report, pdf_path)
+        
+        teach_rag_new_patterns(final_report, chat_text, math_stats)
+
+        print("\n[HTTP] 4. Uploading PDF report to free host...")
+        download_url = link_generato_for_file(pdf_path)
+
+        if not download_url:
+            raise HTTPException(status_code=500, detail="Failed to generate PDF link.")
+
+        return {
+            "status": "success",
+            "download_url": download_url,
+            "report_data": final_report
+        }
+
+    except Exception as e:
+        print(f"[HTTP] ERROR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @client.on_message
 def handle_message(message):
     try:
@@ -663,8 +756,7 @@ def handle_message(message):
                 
             print(f"COMPLETE! Reports saved locally:\nJSON: {json_path}\nPDF: {pdf_path}")
 
-# making the rag learn
-
+            # making the rag learn
             teach_rag_new_patterns(final_report, chat_text, math_stats)            
             print("\n4. Uploading PDF report to free host...")
             download_url = link_generato_for_file(pdf_path)
@@ -700,14 +792,25 @@ def handle_message(message):
         print("="*50)
 
 
-if __name__ == "__main__":
-    print("Initializing robust listener...")
+def run_caspian_bot():
+    """Runs the blocking Caspian listener in a separate thread."""
+    print("Initializing robust Caspian listener on background thread...")
     while True:
         try:
             client.listen()
         except httpx.ReadTimeout:
-            print("Network timeout (waiting for messages). Auto-reconnecting in 3 seconds...")
+            print("Caspian network timeout. Auto-reconnecting in 3 seconds...")
             time.sleep(5)
         except Exception as e:
-            print(f"Connection interrupted ({e}). Auto-reconnecting in 5 seconds...")
+            print(f"Caspian connection interrupted ({e}). Auto-reconnecting in 5 seconds...")
             time.sleep(10)
+
+
+if __name__ == "__main__":
+    # 1. Start the Caspian Bot as a daemon thread (runs in background)
+    bot_thread = threading.Thread(target=run_caspian_bot, daemon=True)
+    bot_thread.start()
+    
+    # 2. Start the FastAPI server on the main thread
+    print("Starting FastAPI HTTP Server for Next.js Frontend...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

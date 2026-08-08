@@ -11,7 +11,6 @@ __pycache__/
 
 # Documents and Notes
 *.odt
-*.json
 
 # Knowledge Base / Large PDFs
 knowledge_done/
