@@ -64,7 +64,7 @@ export default function ToolPage() {
 
     try {
       // Pointing to your local Python FastAPI server
-      const response = await fetch('http://localhost:8000/api/analyze', {
+      const response = await fetch('http://34.14.222.173:8000/api/analyze', {
         method: 'POST',
         body: formData,
       })
