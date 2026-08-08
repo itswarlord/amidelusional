@@ -1,11 +1,6 @@
-/** @type {import('next').NextConfig} */
+/** @type {import('next').Next.jsConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  images: {
-    unoptimized: true,
-  },
+  allowedDevOrigins: ['34.14.222.173'],
 }
 
 export default nextConfig
