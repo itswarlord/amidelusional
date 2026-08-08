@@ -19,7 +19,7 @@ export default function ToolPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState('') // Added state for the PDF link
+  const [pdfUrl, setPdfUrl] = useState('')
   const fileInputRef = useRef(null)
 
   const handleFile = (f) => {
@@ -57,13 +57,11 @@ export default function ToolPage() {
     setIsSuccess(false)
     setPdfUrl('')
 
-    // Package the file and background text
     const formData = new FormData()
     formData.append('background', background)
     formData.append('chat_file', file)
 
     try {
-      // Pointing to your local Python FastAPI server
       const response = await fetch('http://34.14.222.173:8000/api/analyze', {
         method: 'POST',
         body: formData,
@@ -158,15 +156,12 @@ export default function ToolPage() {
                   </button>
                 </div>
               ) : (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
+                /* REPLACED DIV WITH NATIVE LABEL TO BYPASS BROWSER IP SECURITY RESTRICTIONS */
+                <label
+                  htmlFor="chat-upload"
                   onDrop={onDrop}
                   onDragOver={onDragOver}
                   onDragLeave={onDragLeave}
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Upload WhatsApp chat export file"
-                  onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
                   className={cn(
                     'relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 cursor-pointer transition-all',
                     isDragging
@@ -192,13 +187,13 @@ export default function ToolPage() {
                   </div>
                   <input
                     ref={fileInputRef}
+                    id="chat-upload"
                     type="file"
                     accept=".txt"
                     onChange={handleInputChange}
                     className="sr-only"
-                    aria-hidden="true"
                   />
-                </div>
+                </label>
               )}
             </div>
 
@@ -235,7 +230,6 @@ export default function ToolPage() {
                     behavioral pattern analysis, and actionable insights.
                   </p>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    {/* The Button is now wired up to download the PDF URL */}
                     <Button
                       asChild
                       size="sm"
