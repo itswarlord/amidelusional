@@ -1,105 +1,66 @@
- <div align="center">
 
+<div align="center">
 
 # Am I Delusional?
 
-
-**An AI agent that gives you a realistic, unfiltered report of your relationship.**
-
+**An AI agent that uses Zero-Knowledge cryptography and clinical psychology to give you a ruthless, unfiltered report of your relationship.**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat&logo=python&logoColor=white)](#)
-
-[![Gemini](https://img.shields.io/badge/LLM-Gemini_3.6_Flash-orange.svg?style=flat)](#)
-
+[![Next.js](https://img.shields.io/badge/Frontend-Next.js-black.svg?style=flat&logo=next.js&logoColor=white)](#)
+[![Web3](https://img.shields.io/badge/Web3-Semaphore_ZK-purple.svg?style=flat)](#)
+[![Gemini](https://img.shields.io/badge/LLM-Gemini_3.5_Flash-orange.svg?style=flat)](#)
 [![Pinecone](https://img.shields.io/badge/VectorDB-Pinecone-lightgrey.svg?style=flat)](#)
-
 [![LangChain](https://img.shields.io/badge/Framework-LangChain-1C3C3C.svg?style=flat&logo=langchain&logoColor=white)](#)
-
-[![LangGraph](https://img.shields.io/badge/Agents-LangGraph-3178C6.svg?style=flat&logo=langchain&logoColor=white)](#)
-
 [![Status](https://img.shields.io/badge/Status-Active-success.svg?style=flat)](#)
-
 
 </div>
 
-
-> **AmIDelusional** is an AI-powered agent designed to give you a realistic, unfiltered, and psychologically grounded report on the health of your relationship. Built strictly on the foundational research of Dr. John Gottman and Indian Psychologists to make this centered toward the Indian demographic, this agent analyzes your relationship dynamics and tells you exactly where you stand—no sugarcoating, just science. It 
-
+> **AmIDelusional** is an AI-powered agent designed to give you a realistic, unfiltered, and psychologically grounded report on the health of your relationship. Built for the IITG.eth Hackathon, this agent analyzes your relationship dynamics and tells you exactly where you stand. Oh, and it uses Ethereum Zero-Knowledge proofs so you can get wrecked by the AI with absolute privacy.
 
 ---
 
+## 🚀 The TL;DR (What is this actually?)
 
-## 🚀 Try It Live
+Officially, **Am I Delusional?** is a privacy-preserving, AI-powered clinical evaluator that analyzes raw WhatsApp chat exports. It leverages Semaphore Zero-Knowledge proofs on the Ethereum Sepolia network to guarantee absolute anonymity before processing sensitive telemetry through a custom Gemini + Pinecone RAG pipeline.
 
+Unofficially, it is a cryptographic reality check. It mathematically proves whether you are actually the toxic one in your relationship, built by a developer who nearly lost their sanity fighting Web3 browser wallets to make it happen.
 
-You don't need to install anything to get a reality check. The code is already hosted on a 24/7 server. Talk to the agent directly right now for free:
-
-
+You can try the Telegram/Email legacy agents here:
 *   📱 **Telegram:** [@amidelusionalbot](https://t.me/amidelusionalbot)
-
-*   ✉️ **Email:** `agt-282ce9e5e2f667ff30594254-77e083@agents.trycaspianai.com`
-
-
-
-Incase of any errors please contact me ASAP: vansh@iitg.ac.in
+*    **WEBSITE:** http://34.14.222.173:3000/
 
 ---
 
+## 🛠️ The  Tech Stack
 
-## 🛠️ Tech Stack & Architecture
-
-
-| Component | Technology | Description |
-
+| Component | Technology | Why we used it (and suffered for it) |
 | :--- | :--- | :--- |
-
-| **Backend** | Python | Core logic and API integrations |
-
-| **Core Brain** | Gemini 3.6 Flash | Fast, empathetic, yet highly analytical reasoning |
-
-| **Agent Framework** | LangChain & LangGraph | Manages agentic workflows, stateful loops, and RAG chains |
-
-| **Vector DB** | Pinecone | Stores and retrieves psychological context via RAG |
-
-| **Embeddings** | `BAAI/bge-small-en-v1.5` | Fast local embeddings via Hugging Face |
-
-| **Deployment** | Caspian AI SDK | Agent routing for seamless multi-channel access (Telegram & Email) |
-
+| **Frontend** | Next.js, React, Tailwind | Beautiful UI where you drag-and-drop your toxic chats. |
+| **Privacy Layer** | Semaphore Protocol | A zero-knowledge tool developed by the Ethereum Foundation's PSE team that generates ZK proofs locally in the browser so you don't dox yourself. Along with server level smart contract.|
+| **Smart Contract** | Ethereum (Sepolia Testnet) | Verifies the ZK proof on-chain to prevent double-spending. |
+| **Backend / Relayer** | FastAPI & Web3.py | Bypasses glitchy MetaMask popups by programmatically paying gas and relaying transactions to the blockchain. |
+| **Core Brain** | Gemini 3.5 Flash | Provides near-Pro intelligence with a massive 1M token context window, analyzing your red flags at lightning speed. |
+| **Vector DB** | Pinecone | Stores and retrieves clinical psychology context via RAG. |
+| **Embeddings** | `BAAI/bge-en-v1.5` | Fast local embeddings via Hugging Face. |
+| **Artifact Gen** | ReportLab | Generates the ultimate PDF receipt directly from Python so you can win the argument. |
 
 ---
-
 
 ## 📖 Complete Setup Manual (Local Installation)
 
-
-If you want to run this agent locally, modify the prompts, or build upon the RAG architecture, follow these steps.
-
+If you want to run this agent locally, modify the prompts, or experience the joy of compiling `.wasm` circuits, follow these steps.
 
 ### 1. Prerequisites
+You will need active API keys and a wallet with Sepolia ETH:
+*   **Google Gemini API** *(Google AI Studios)*
+*   **Pinecone API**
+*   **Ethereum Private Key** *(A MetaMask wallet holding Sepolia ETH for the relayer)*
+*   **Telegram Bot Token & Caspian SDK** *(For the listener bots)*
 
-You will need active API keys for the following services:
-
-*   Google Gemini API *(Google AI Studios)*
-
-*   Pinecone API 
-
-*   Caspian AI *(if using their agent routing)*
-
-*   Telegram Bot Token *(via BotFather)*
-
-### 2. Install Dependencies
-
-
-*(Note: `os`, `re`, `time`, `json`, and `datetime` are part of the Python Standard Library and do not need to be installed via pip.)*
-
-
-You can install all the required external libraries directly via terminal.
-
-
+### 2. Backend Setup (The Python Relayer)
+Install the dependencies (including `web3` for our sanity-saving relayer):
 ```bash
-
-pip install httpx requests python-dotenv caspian_sdk pydantic langchain-google-genai langchain-core pinecone langchain-huggingface
-
+pip install fastapi uvicorn python-multipart reportlab google-generativeai web3 python-dotenv caspian_sdk pydantic langchain-google-genai langchain-core pinecone langchain-huggingface
 ```
 
 
@@ -113,15 +74,12 @@ Remember never commit you API keys, it can be missused.
 
 ```env
 
-GEMINI_API_KEY="your_gemini_api_key_here"
-
-PINECONE_API_KEY="your_pinecone_api_key_here"
-
-PINECONE_ENV="your_pinecone_environment_here"
-
-CASPIAN_API_KEY="your_caspian_api_key_here"
-
-TELEGRAM_BOT_TOKEN="your_telegram_bot_token_here"
+GEMINI_API_KEY="your_gemini_key"
+PINECONE_API_KEY="your_pinecone_key"
+TELEGRAM_BOT_TOKEN="your_telegram_token"
+EMAIL_CONNECTION_ID="your_caspian_email_id"
+# The wallet that pays the gas so your users don't have to:
+RELAYER_PRIVATE_KEY="your_ethereum_private_key"
 
 ```
 
@@ -147,7 +105,9 @@ Feed the data through your desired channels and wait for the report to be genera
 
 - [x] **Integrated Modern Psych Research:** Taken contemporary literature on healthy relationships and built a RAG model deployed on Pinecone. Upon testing the RAG model it is giving extremely useful snippets for the AI agent to analyse.
 
-- [x] **Built the RAG Pipeline:** Successfully implemented Pinecone to retrieve relevant psychological context and embedded it using the lightweight, fast `BAAI/bge-small-en-v1.5` model. 
+- [x] **Built the RAG Pipeline:** Successfully implemented Pinecone to retrieve relevant psychological context and embedded it using the lightweight, fast `BAAI/bge-small-en-v1.5` model.
+    
+- [x] **Integrated Semaphore Based Privacy:** 2 Stage privacy at server level and browser level with layered encryption for data.
 
 - [x] **Connected the "Brain":** Hooked up Gemini 3.6 Flash as the core reasoning engine for fast, empathetic, yet highly analytical responses.
 
