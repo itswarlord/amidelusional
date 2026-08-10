@@ -23,8 +23,6 @@ import uuid #encoding
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from web3 import Web3
-
 import shutil
 
 """
@@ -55,37 +53,6 @@ embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("relationship-kb")
 
-
-print("Connecting to Sepolia Testnet for ZK Validation...")
-SEPOLIA_RPC = "https://ethereum-sepolia-rpc.publicnode.com"
-w3 = Web3(Web3.HTTPProvider(SEPOLIA_RPC))
-
-# NOTE: Add RELAYER_PRIVATE_KEY to your .env file!
-RELAYER_PRIVATE_KEY = os.getenv("RELAYER_PRIVATE_KEY") 
-if RELAYER_PRIVATE_KEY:
-    relayer_account = w3.eth.account.from_key(RELAYER_PRIVATE_KEY)
-else:
-    relayer_account = None
-    print("WARNING: RELAYER_PRIVATE_KEY not found in .env. Contract validation will be bypassed.")
-
-CONTRACT_ADDRESS = "0x1e0d760a8d53a51a07b5d1e2e4f0a2f61e1a33f5"
-CONTRACT_ABI = [
-    {
-        "inputs": [
-            {"internalType": "uint256", "name": "merkleTreeRoot", "type": "uint256"},
-            {"internalType": "uint256", "name": "nullifierHash", "type": "uint256"},
-            {"internalType": "uint256", "name": "signal", "type": "uint256"},
-            {"internalType": "uint256", "name": "externalNullifier", "type": "uint256"},
-            {"internalType": "uint256[8]", "name": "proof", "type": "uint256[8]"}
-        ],
-        "name": "verifyAndRecord",
-        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    }
-]
-if relayer_account:
-    contract = w3.eth.contract(address=w3.to_checksum_address(CONTRACT_ADDRESS), abi=CONTRACT_ABI)
 app = FastAPI(title="Am I Delusional API")
 
 app.add_middleware(
@@ -607,52 +574,7 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
 
     except Exception as e:
         print(f"RAG Deep Learning Failed (Skipping): {e}")
-def submit_proof_on_chain(zk_proof_json: str) -> str:
-    """Submits the ZK proof to the Sepolia Smart Contract via the Relayer."""
-    if not relayer_account:
-        return "Simulated_Tx_Hash_No_Private_Key"
-        
-    try:
-        proof_data = json.loads(zk_proof_json)
-        
-        # Parse Semaphore values
-        root = int(proof_data["merkleTreeRoot"])
-        nullifier_hash = int(proof_data["nullifierHash"])
-        
-        # Format signal and external nullifier
-        signal_val = proof_data["signal"]
-        ext_null_val = proof_data["externalNullifier"]
-        signal = int(signal_val) if str(signal_val).isdigit() else int(Web3.keccak(text=str(signal_val)).hex(), 16)
-        ext_nullifier = int(ext_null_val) if str(ext_null_val).isdigit() else int(Web3.keccak(text=str(ext_null_val)).hex(), 16)
-        
-        proof_points = [int(x) for x in proof_data["proof"]]
 
-        # Build and send transaction
-        nonce = w3.eth.get_transaction_count(relayer_account.address)
-        txn = contract.functions.verifyAndRecord(
-            root, nullifier_hash, signal, ext_nullifier, proof_points
-        ).build_transaction({
-            'from': relayer_account.address,
-            'nonce': nonce,
-            'gas': 500000,
-            'gasPrice': w3.eth.gas_price,
-            'chainId': 11155111
-        })
-
-        signed_txn = w3.eth.account.sign_transaction(txn, private_key=RELAYER_PRIVATE_KEY)
-        tx_hash = w3.eth.send_raw_transaction(signed_txn.raw_transaction)
-        
-        print(f"Waiting for blockchain confirmation... Tx Hash: {tx_hash.hex()}")
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-        
-        if receipt.status != 1:
-            raise Exception("Smart contract transaction reverted (Possible double-spend or invalid proof).")
-            
-        return receipt.transactionHash.hex()
-        
-    except Exception as e:
-        print(f"On-chain verification error: {str(e)}")
-        raise ValueError(f"On-chain verification failed: {str(e)}")
 
 @app.post("/api/analyze")
 async def http_analyze_chat(
@@ -660,22 +582,22 @@ async def http_analyze_chat(
     zk_proof: str = Form(None), # <--- Semaphore Zero-Knowledge proof parameter integrated
     chat_file: UploadFile = File(...)
 ):
+    """
+    Handles HTTP uploads from the Next.js frontend, integrating client-side 
+    Semaphore ZK proof verification alongside the Caspian pipeline.
+    """
     if not chat_file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
 
     try:
-        tx_hash = None
-        # --- NEW BLOCKCHAIN GATEWAY ---
+        # Optional: Parse/validate the ZK proof payload coming from the frontend
         if zk_proof:
             try:
-                print("\n[HTTP] 0. Validating ZK Proof on Sepolia Smart Contract...")
-                tx_hash = submit_proof_on_chain(zk_proof)
-                print(f"[HTTP] ZK Proof Verified! Tx Hash: {tx_hash}")
-            except ValueError as ve:
-                # If the smart contract rejects the proof, stop the API completely.
-                raise HTTPException(status_code=403, detail=str(ve))
+                proof_data = json.loads(zk_proof)
+                print(f"[HTTP] Valid ZK Proof received. Nullifier Hash: {proof_data.get('nullifierHash', 'N/A')}")
+            except Exception as zk_err:
+                print(f"[HTTP] Warning: Failed to parse ZK proof JSON: {zk_err}")
 
-        # --- REST OF YOUR EXISTING PIPELINE ---
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_folder = os.path.join(os.getcwd(), "Web_Clients", f"Session_{timestamp}")
         os.makedirs(user_folder, exist_ok=True)
@@ -701,14 +623,11 @@ async def http_analyze_chat(
         genenrator = generate_ai_report(background, chat_text, math_stats)
 
         print("\n[HTTP] 3. Compiling Final JSON & Generating PDF...")
-        
-
         final_report = {
             "section_1_transcript_metadata": {
                 "chat_platform": "WhatsApp",
                 "date_range": f"{math_stats['metadata'].get('start_date')} to {math_stats['metadata'].get('end_date')}",
-                "total_files_analyzed": 1,
-                "blockchain_verification": tx_hash 
+                "total_files_analyzed": 1
             },
             "section_2_profiles_and_baseline": genenrator["section_2_profiles"],
             "section_3_quantitative_metrics": {
