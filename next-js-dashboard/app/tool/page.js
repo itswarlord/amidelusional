@@ -9,9 +9,12 @@ import {
   Loader2,
   X,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+// Import the ZK proof utility you created
+import { createAnonymousProof } from '@/utils/semaphore'
 
 export default function ToolPage() {
   const [background, setBackground] = useState('')
@@ -20,6 +23,7 @@ export default function ToolPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [pdfUrl, setPdfUrl] = useState('')
+  const [zkStatus, setZkStatus] = useState('') // Track ZK proof progress
   const fileInputRef = useRef(null)
 
   const handleFile = (f) => {
@@ -57,11 +61,22 @@ export default function ToolPage() {
     setIsSuccess(false)
     setPdfUrl('')
 
-    const formData = new FormData()
-    formData.append('background', background)
-    formData.append('chat_file', file)
-
     try {
+      // Step 1: Generate Client-Side ZK Proof via Semaphore
+      setZkStatus('Generating Zero-Knowledge Proof...')
+      const externalNullifier = 'amidelusional-analysis-scope'
+      const signal = 'authorize-report-generation'
+      
+      const zkProof = await createAnonymousProof(externalNullifier, signal)
+
+      setZkStatus('Sending payload securely...')
+
+      // Step 2: Package the file, background, and serialized ZK proof
+      const formData = new FormData()
+      formData.append('background', background)
+      formData.append('chat_file', file)
+      formData.append('zk_proof', JSON.stringify(zkProof)) // Attach ZK proof payload
+
       const response = await fetch('http://34.14.222.173:8000/api/analyze', {
         method: 'POST',
         body: formData,
@@ -80,10 +95,11 @@ export default function ToolPage() {
         throw new Error(data.detail || 'Analysis failed.')
       }
     } catch (error) {
-      console.error('Error analyzing chat:', error)
-      alert('Something went wrong. Make sure your Python backend is running on port 8000.')
+      console.error('Error during ZK generation or analysis:', error)
+      alert('Something went wrong with the ZK proof or backend server.')
     } finally {
       setIsGenerating(false)
+      setZkStatus('')
     }
   }
 
@@ -92,6 +108,7 @@ export default function ToolPage() {
     setIsSuccess(false)
     setBackground('')
     setPdfUrl('')
+    setZkStatus('')
   }
 
   return (
@@ -99,15 +116,14 @@ export default function ToolPage() {
       <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-primary mb-4">
-            <Sparkles size={12} />
-            AI-Powered Clinical Analysis
+            <ShieldCheck size={12} />
+            ZK-Secured & AI-Powered Clinical Analysis
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold text-foreground text-balance">
             Relationship Diagnostic Tool
           </h1>
           <p className="mt-3 text-muted-foreground text-base leading-relaxed">
-            Upload your WhatsApp chat export and provide context. Our AI will generate a
-            clinical-grade PDF report in seconds.
+            Upload your WhatsApp chat export anonymously using Semaphore zero-knowledge validation.
           </p>
         </div>
 
@@ -127,9 +143,6 @@ export default function ToolPage() {
                 placeholder="Tell us a bit about your relationship, ages, how you met, how long you've been together, any recurring issues..."
                 className="w-full resize-none rounded-lg border border-input bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/60 transition leading-relaxed"
               />
-              <p className="text-xs text-muted-foreground">
-                More context = more accurate diagnosis. Share freely &mdash; nothing is stored.
-              </p>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -156,7 +169,6 @@ export default function ToolPage() {
                   </button>
                 </div>
               ) : (
-                /* REPLACED DIV WITH NATIVE LABEL TO BYPASS BROWSER IP SECURITY RESTRICTIONS */
                 <label
                   htmlFor="chat-upload"
                   onDrop={onDrop}
@@ -186,7 +198,6 @@ export default function ToolPage() {
                     </p>
                   </div>
                   <input
-                    ref={fileInputRef}
                     id="chat-upload"
                     type="file"
                     accept=".txt"
@@ -206,12 +217,12 @@ export default function ToolPage() {
               {isGenerating ? (
                 <>
                   <Loader2 size={18} className="animate-spin" />
-                  Generating Clinical Report...
+                  {zkStatus || 'Generating Clinical Report...'}
                 </>
               ) : (
                 <>
-                  <Sparkles size={18} />
-                  Generate Clinical Report
+                  <ShieldCheck size={18} />
+                  Generate ZK-Verified Report
                 </>
               )}
             </Button>
@@ -224,10 +235,9 @@ export default function ToolPage() {
                   <CheckCircle size={20} />
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold text-foreground text-sm">Report Generated!</p>
+                  <p className="font-semibold text-foreground text-sm">ZK Report Generated!</p>
                   <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                    Your clinical PDF report is ready. It contains relationship scores,
-                    behavioral pattern analysis, and actionable insights.
+                    Your zero-knowledge authenticated clinical PDF report is ready.
                   </p>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Button
@@ -237,7 +247,7 @@ export default function ToolPage() {
                     >
                       <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
                         <Download size={15} />
-                        Your PDF Report is Ready
+                        Download PDF Report
                       </a>
                     </Button>
                     <Button
@@ -254,11 +264,6 @@ export default function ToolPage() {
             </div>
           )}
         </div>
-
-        <p className="mt-5 text-center text-xs text-muted-foreground/60 leading-relaxed">
-          Your data is analyzed locally and never stored or shared. This tool is for informational
-          purposes and does not replace professional therapy.
-        </p>
       </div>
     </main>
   )

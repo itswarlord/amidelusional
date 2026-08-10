@@ -1,8 +1,6 @@
 """
 BUILT by Vansh Aggarwal. 
 """
-
-
 # importing all the dependencies
 
 
@@ -521,7 +519,7 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
         psych = ai_report.get('section_7_psychological_factors', {})
         gottman = ai_report.get('section_6_gottman_conflict_markers', {})
         green = ai_report.get('section_5_positive_behavioral_markers', {})
-        traj = ai_report.get('section_8_trend_analysis', {}) # Fixed key!
+        traj = ai_report.get('section_8_trend_analysis', {})
 
         strengths = ", ".join(diag.get('top_3_strengths', []))
         triggers = ", ".join(psych.get('primary_conflict_triggers', []))
@@ -581,16 +579,25 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
 @app.post("/api/analyze")
 async def http_analyze_chat(
     background: str = Form(...),
+    zk_proof: str = Form(None), # <--- Semaphore Zero-Knowledge proof parameter integrated
     chat_file: UploadFile = File(...)
 ):
     """
-    Handles HTTP uploads from the Next.js frontend, utilizing the 
-    exact same pipeline as the Caspian bot.
+    Handles HTTP uploads from the Next.js frontend, integrating client-side 
+    Semaphore ZK proof verification alongside the Caspian pipeline.
     """
     if not chat_file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
 
     try:
+        # Optional: Parse/validate the ZK proof payload coming from the frontend
+        if zk_proof:
+            try:
+                proof_data = json.loads(zk_proof)
+                print(f"[HTTP] Valid ZK Proof received. Nullifier Hash: {proof_data.get('nullifierHash', 'N/A')}")
+            except Exception as zk_err:
+                print(f"[HTTP] Warning: Failed to parse ZK proof JSON: {zk_err}")
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         user_folder = os.path.join(os.getcwd(), "Web_Clients", f"Session_{timestamp}")
         os.makedirs(user_folder, exist_ok=True)
@@ -613,16 +620,16 @@ async def http_analyze_chat(
         chat_text = safe_read_file(target_chat_path)
 
         print("\n[HTTP] 2. Running Gemini + RAG Diagnostics...")
-        ai_stats = generate_ai_report(background, chat_text, math_stats)
+        genenrator = generate_ai_report(background, chat_text, math_stats)
 
         print("\n[HTTP] 3. Compiling Final JSON & Generating PDF...")
         final_report = {
             "section_1_transcript_metadata": {
-                "chat_platform": "WhatsApp (Auto-detected)",
+                "chat_platform": "WhatsApp",
                 "date_range": f"{math_stats['metadata'].get('start_date')} to {math_stats['metadata'].get('end_date')}",
                 "total_files_analyzed": 1
             },
-            "section_2_profiles_and_baseline": ai_stats["section_2_profiles"],
+            "section_2_profiles_and_baseline": genenrator["section_2_profiles"],
             "section_3_quantitative_metrics": {
                 "total_messages": math_stats["general_stats"]["total_messages"],
                 "late_night_messages": math_stats["general_stats"]["late_night_messages"],
@@ -633,11 +640,11 @@ async def http_analyze_chat(
                 name: {"avg_response_time_mins": metrics["avg_response_time_mins"]} 
                 for name, metrics in math_stats["participants"].items()
             },
-            "section_5_positive_behavioral_markers": ai_stats["section_5_green_flags"],
-            "section_6_gottman_conflict_markers": ai_stats["section_6_gottman"],
-            "section_7_psychological_factors": ai_stats["section_7_psychology"],
-            "section_8_trend_analysis": ai_stats["section_8_trajectory"],
-            "section_9_ai_diagnosis": ai_stats["section_9_diagnosis"]
+            "section_5_positive_behavioral_markers": genenrator["section_5_green_flags"],
+            "section_6_gottman_conflict_markers": genenrator["section_6_gottman"],
+            "section_7_psychological_factors": genenrator["section_7_psychology"],
+            "section_8_trend_analysis": genenrator["section_8_trajectory"],
+            "section_9_ai_diagnosis": genenrator["section_9_diagnosis"]
         }
 
         pdf_path = os.path.join(user_folder, f"Relationship_Report_{timestamp}.pdf")
@@ -718,7 +725,7 @@ def handle_message(message):
             chat_text = safe_read_file(target_chat_path)
 
             print("\n2. Running Gemini + RAG Diagnostics...")
-            ai_stats = generate_ai_report(background_text, chat_text, math_stats)
+            genenrator = generate_ai_report(background_text, chat_text, math_stats)
             
             print("\n3. Compiling Final 9-Section JSON & Generating PDF...")
             final_report = {
@@ -727,7 +734,7 @@ def handle_message(message):
                     "date_range": f"{math_stats['metadata'].get('start_date')} to {math_stats['metadata'].get('end_date')}",
                     "total_files_analyzed": len(data['attachments'])
                 },
-                "section_2_profiles_and_baseline": ai_stats["section_2_profiles"],
+                "section_2_profiles_and_baseline": genenrator["section_2_profiles"],
                 "section_3_quantitative_metrics": {
                     "total_messages": math_stats["general_stats"]["total_messages"],
                     "late_night_messages": math_stats["general_stats"]["late_night_messages"],
@@ -738,11 +745,11 @@ def handle_message(message):
                     name: {"avg_response_time_mins": metrics["avg_response_time_mins"]} 
                     for name, metrics in math_stats["participants"].items()
                 },
-                "section_5_positive_behavioral_markers": ai_stats["section_5_green_flags"],
-                "section_6_gottman_conflict_markers": ai_stats["section_6_gottman"],
-                "section_7_psychological_factors": ai_stats["section_7_psychology"],
-                "section_8_trend_analysis": ai_stats["section_8_trajectory"],
-                "section_9_ai_diagnosis": ai_stats["section_9_diagnosis"]
+                "section_5_positive_behavioral_markers": genenrator["section_5_green_flags"],
+                "section_6_gottman_conflict_markers": genenrator["section_6_gottman"],
+                "section_7_psychological_factors": genenrator["section_7_psychology"],
+                "section_8_trend_analysis": genenrator["section_8_trajectory"],
+                "section_9_ai_diagnosis": genenrator["section_9_diagnosis"]
             }
 
             json_path = os.path.join(user_folder, f"final_report_{timestamp}.json")

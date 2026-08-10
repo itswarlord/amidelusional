@@ -9,13 +9,13 @@ const sora = Sora({ subsets: ['latin'], variable: '--font-display' })
 export const metadata = {
   title: 'Am I Delusional? — AI Relationship Diagnostic Tool',
   description:
-    'Clinical relationship insights from your WhatsApp chat history. Powered by Gemini AI, LangChain, and Pinecone RAG — custom-trained for Indian relationships.',
+    'Clinical relationship insights from your WhatsApp chat history. Powered by BAAI, LangChain, and Pinecone RAG — custom-trained for Indian relationships.',
   generator: 'v0.app',
 }
 
 export const viewport = {
   colorScheme: 'light',
-  themeColor: '#3b3fa8',
+  themeColor: '#3072dd',
 }
 
 export default function RootLayout({ children }) {
