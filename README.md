@@ -23,11 +23,11 @@
 
 Officially, **Am I Delusional?** is a privacy-preserving, AI-powered clinical evaluator that analyzes raw WhatsApp chat exports. It leverages Semaphore Zero-Knowledge proofs on the Ethereum Sepolia network to guarantee absolute anonymity before processing sensitive telemetry through a custom Gemini + Pinecone RAG pipeline.
 
-Unofficially, it is a cryptographic reality check. It mathematically proves whether you are actually the toxic one in your relationship, built by a developer who nearly lost their sanity fighting Web3 browser wallets to make it happen.
+The USP of this product is the unique training method with 100 yrs worth of real Indian Relationships. True trained hyper-locally with research papers from famous Indian researchers. Real chat data with no AI non-sense uploaded to custom train the model and the RAG model. I take pride in the training of this model. We pick up western philosophy indianise it with Indian values and understanding Indian family structures to give real advice.
 
-You can try the Telegram/Email legacy agents here:
-*   📱 **Telegram:** [@amidelusionalbot](https://t.me/amidelusionalbot)
-*    **WEBSITE:** http://34.14.222.173:3000/
+Genuinely try our legacy agents here:
+*   **Telegram:**  [@amidelusionalbot](https://t.me/amidelusionalbot)
+*    **WEBSITE:**  http://34.14.222.173:3000/
 
 ---
 
@@ -52,7 +52,7 @@ If you want to run this agent locally, modify the prompts, or experience the joy
 
 ### 1. Prerequisites
 You will need active API keys and a wallet with Sepolia ETH:
-*   **Google Gemini API** *(Google AI Studios)*
+*   **Google Gemini API** 
 *   **Pinecone API**
 *   **Ethereum Private Key** *(A MetaMask wallet holding Sepolia ETH for the relayer)*
 *   **Telegram Bot Token & Caspian SDK** *(For the listener bots)*
