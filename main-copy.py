@@ -24,6 +24,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import shutil
+import base64
 
 """
 importing reportlab from github
@@ -47,6 +48,8 @@ client = CommClient()
 
 client.connect_telegram(bot_token=os.getenv("TELEGRAM_BOT_TOKEN"))
 client.connect_email(connection_id=os.getenv("EMAIL_CONNECTION_ID"))
+client.connect_discord(connection_id=os.getenv("DISCORD_BOT_CONNECTION_ID"), bot_token=os.getenv("DISCORD_BOT_TOKEN"))
+
 
 print("Connecting to Pinecone and loading BAAI embedding model...")
 embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
@@ -470,19 +473,26 @@ def generate_ai_report(background_text, chat_text, math_stats):
 
 
 def rawdataextract(message):
-    user_text = getattr(message, 'text', "")
-    raw_media = getattr(message, 'media', [])
-    customer_id = getattr(message, 'customer_id', 'Unknown_User')
+    # EMAIL FIX: Fallback to 'body' and 'attachments' and 'sender' if chat variables are missing
+    user_text = getattr(message, 'text', getattr(message, 'body', ""))
+    
+    raw_media = getattr(message, 'media', None)
+    if not raw_media:
+        raw_media = getattr(message, 'attachments', [])
+        
+    customer_id = getattr(message, 'customer_id', getattr(message, 'sender', 'Unknown_User'))
 
     media_list = []
     for m in (raw_media or []):
         if isinstance(m, dict):
             fname = m.get('name') or m.get('filename') or 'chat.txt'
-            furl = m.get('url') or m.get('download_url') or m.get('file_url') or m.get('link') or ''
+            # DISCORD FIX: Added proxy_url and attachment_url
+            furl = m.get('url') or m.get('download_url') or m.get('file_url') or m.get('link') or m.get('proxy_url') or m.get('attachment_url') or ''
             fcontent = m.get('content') or m.get('data') or m.get('bytes') or None
         else:
             fname = getattr(m, 'name', getattr(m, 'filename', 'chat.txt'))
-            furl = getattr(m, 'url', getattr(m, 'download_url', getattr(m, 'file_url', getattr(m, 'link', ''))))
+            # DISCORD FIX: Added proxy_url
+            furl = getattr(m, 'url', getattr(m, 'download_url', getattr(m, 'file_url', getattr(m, 'link', getattr(m, 'proxy_url', '')))))
             fcontent = getattr(m, 'content', getattr(m, 'data', None))
         
         if "api.telegram.orgfile" in furl:
@@ -495,7 +505,6 @@ def rawdataextract(message):
         "text": user_text if user_text else "",
         "attachments": media_list
     }
-
 
 def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
     """
@@ -692,14 +701,28 @@ def handle_message(message):
                 
                 if file['url']:
                     print(f"Downloading attachment from URL: {file['filename']}...")
-                    response = bolo.get(file['url'], timeout=30)
+                    # DISCORD FIX: Headers trick Discord into allowing the download
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                    response = bolo.get(file['url'], headers=headers, timeout=30)
                     response.raise_for_status()
                     file_bytes = response.content
+                    
                 elif file['content']:
                     print(f"Processing raw attachment content for: {file['filename']}...")
-                    file_bytes = file['content']
-                    if isinstance(file_bytes, str):
-                        file_bytes = file_bytes.encode('utf-8')
+                    raw_content = file['content']
+                    
+                    # EMAIL FIX: Decode Base64 data safely
+                    try:
+                        file_bytes = base64.b64decode(raw_content)
+                        print("✅ Successfully decoded Base64 email attachment into plain text bytes!")
+                    except Exception as e:
+                        print(f"Base64 decode skipped/failed: {e}")
+                        if isinstance(raw_content, str):
+                            file_bytes = raw_content.encode('utf-8')
+                        else:
+                            file_bytes = raw_content
                 else:
                     print(f" Warning: No valid download URL or content found for {file['filename']}.")
                     continue

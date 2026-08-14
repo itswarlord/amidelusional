@@ -24,6 +24,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from web3 import Web3
+import base64
 
 import shutil
 
@@ -49,6 +50,7 @@ client = CommClient()
 
 client.connect_telegram(bot_token=os.getenv("TELEGRAM_BOT_TOKEN"))
 client.connect_email(connection_id=os.getenv("EMAIL_CONNECTION_ID"))
+client.connect_discord(connection_id=os.getenv("DISCORD_BOT_CONNECTION_ID"), bot_token=os.getenv("DISCORD_BOT_TOKEN"))
 
 print("Connecting to Pinecone and loading BAAI embedding model...")
 embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
@@ -607,6 +609,7 @@ def teach_rag_new_patterns(ai_report, raw_chat, math_stats):
 
     except Exception as e:
         print(f"RAG Deep Learning Failed (Skipping): {e}")
+
 def submit_proof_on_chain(zk_proof_json: str) -> str:
     """Submits the ZK proof to the Sepolia Smart Contract via the Relayer."""
     if not relayer_account:
