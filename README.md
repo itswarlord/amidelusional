@@ -28,6 +28,7 @@ The USP of this product is the unique training method with 100 yrs worth of real
 Genuinely try our legacy agents here:
 *   **Telegram:**  [@amidelusionalbot](https://t.me/amidelusionalbot)
 *    **WEBSITE:**  http://34.14.222.173:3000/
+*    **E-Mail:**   agt-282ce9e5e2f667ff30594254-77e083@agents.trycaspianai.com 
 
 ---
 
@@ -39,7 +40,7 @@ Genuinely try our legacy agents here:
 | **Privacy Layer** | Semaphore Protocol | A zero-knowledge tool developed by the Ethereum Foundation's PSE team that generates ZK proofs locally in the browser so you don't dox yourself. Along with server level smart contract.|
 | **Smart Contract** | Ethereum (Sepolia Testnet) | Verifies the ZK proof on-chain to prevent double-spending. |
 | **Backend / Relayer** | FastAPI & Web3.py | Bypasses glitchy MetaMask popups by programmatically paying gas and relaying transactions to the blockchain. |
-| **Core Brain** | Gemini 3.5 Flash | Provides near-Pro intelligence with a massive 1M token context window, analyzing your red flags at lightning speed. |
+| **Core Brain** | Gemini 3.5 | Provides near-Pro intelligence with a massive 1M token context window, analyzing your red flags at lightning speed. |
 | **Vector DB** | Pinecone | Stores and retrieves clinical psychology context via RAG. |
 | **Embeddings** | `BAAI/bge-en-v1.5` | Fast local embeddings via Hugging Face. |
 | **Artifact Gen** | ReportLab | Generates the ultimate PDF receipt directly from Python so you can win the argument. |
